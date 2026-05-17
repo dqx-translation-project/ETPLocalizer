@@ -8,7 +8,6 @@ internal enum EvtxFileType { EventText = 0, SubPackage = 1, EventText2 = 2, Smld
 internal sealed class ParsedEvtx
 {
     public EvtxFileType FileType;
-    public bool BigEndian;
     public int EntryCount;      // actual parsed string count
     public int OrigEntryCount;  // raw CMNH entry_count field
     public int MinIndex, MaxIndex;
@@ -43,112 +42,89 @@ internal static class EvtxParser
         return Encoding.UTF8.GetString(data, offset, end - offset);
     }
 
-    private static uint ReadU32(byte[] raw, int offset, bool be) =>
-        be ? BinaryPrimitives.ReadUInt32BigEndian(raw.AsSpan(offset))
-           : BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(offset));
+    private static uint ReadU32(byte[] raw, int offset) =>
+        BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(offset));
 
-    private static void WriteU32(byte[] raw, int offset, uint value, bool be)
-    {
-        if (be) BinaryPrimitives.WriteUInt32BigEndian(raw.AsSpan(offset), value);
-        else    BinaryPrimitives.WriteUInt32LittleEndian(raw.AsSpan(offset), value);
-    }
+    private static void WriteU32(byte[] raw, int offset, uint value) =>
+        BinaryPrimitives.WriteUInt32LittleEndian(raw.AsSpan(offset), value);
 
     public static ParsedEvtx Parse(byte[] rawIn)
     {
         byte[] raw = rawIn;
 
-        // Unwrap CFX\t container (little-endian, PC-only)
+        // Unwrap CFX\t container
         if (raw.Length >= 16 && raw[0] == 'C' && raw[1] == 'F' && raw[2] == 'X' && raw[3] == '\t')
         {
             int hdrSize = BinaryPrimitives.ReadUInt16LittleEndian(raw.AsSpan(8));
             raw = raw[hdrSize..];
         }
 
-        bool be = raw.Length >= 4 && raw[0] == 'X' && raw[1] == 'T' && raw[2] == 'V' && raw[3] == 'E';
-
-        if (raw.Length < 16 || (!be && (raw[0] != 'E' || raw[1] != 'V' || raw[2] != 'T' || raw[3] != 'X')))
+        if (raw.Length < 16 || raw[0] != 'E' || raw[1] != 'V' || raw[2] != 'T' || raw[3] != 'X')
             throw new InvalidDataException($"Not EVTX data (magic={Encoding.ASCII.GetString(raw, 0, Math.Min(4, raw.Length))})");
 
-        // Section magic bytes differ by endianness (big-endian has byte-reversed tags)
-        ReadOnlySpan<byte> magicCmnh = be ? "HNMC"u8 : "CMNH"u8;
-        ReadOnlySpan<byte> magicBlja = be ? "AJLB"u8 : "BLJA"u8;
-        ReadOnlySpan<byte> magicIndx = be ? "XDNI"u8 : "INDX"u8;
-        ReadOnlySpan<byte> magicText = be ? "TXET"u8 : "TEXT"u8;
+        int offCmnh = (int)ReadU32(raw, 4);
 
-        int offCmnh = (int)ReadU32(raw, 4, be);
-
-        if (!raw.AsSpan(offCmnh, 4).SequenceEqual(magicCmnh))
+        if (!raw.AsSpan(offCmnh, 4).SequenceEqual("CMNH"u8))
             throw new InvalidDataException($"Expected CMNH at 0x{offCmnh:X}");
 
-        int cmnhDoff = (int)ReadU32(raw, offCmnh + 4, be);
-        int cmnhDsz  = (int)ReadU32(raw, offCmnh + 8, be);
+        int cmnhDoff = (int)ReadU32(raw, offCmnh + 4);
+        int cmnhDsz  = (int)ReadU32(raw, offCmnh + 8);
         int cmnhDataAbs = offCmnh + cmnhDoff;
 
-        int entryCount  = (int)ReadU32(raw, cmnhDataAbs + 4,  be);
-        int minIdx      = (int)ReadU32(raw, cmnhDataAbs + 8,  be);
-        int maxIdx      = (int)ReadU32(raw, cmnhDataAbs + 12, be);
+        int entryCount  = (int)ReadU32(raw, cmnhDataAbs + 4);
+        int minIdx      = (int)ReadU32(raw, cmnhDataAbs + 8);
+        int maxIdx      = (int)ReadU32(raw, cmnhDataAbs + 12);
 
-        // Big-endian (Wii) files all use the EventText INDX layout regardless of filename.
-        // For little-endian (PC) files, byte 15 carries the file type.
-        EvtxFileType fileType;
-        if (be)
+        EvtxFileType fileType = raw[15] switch
         {
-            fileType = EvtxFileType.EventText;
-        }
-        else
-        {
-            fileType = raw[15] switch
-            {
-                1 => EvtxFileType.SubPackage,
-                4 => EvtxFileType.Smldt,
-                _ => EvtxFileType.EventText,
-            };
-        }
+            1 => EvtxFileType.SubPackage,
+            4 => EvtxFileType.Smldt,
+            _ => EvtxFileType.EventText,
+        };
 
         // BLJA follows CMNH header + CMNHData + FOOT (16 bytes)
         int offBlja = offCmnh + cmnhDoff + cmnhDsz + 16;
-        if (!raw.AsSpan(offBlja, 4).SequenceEqual(magicBlja))
+        if (!raw.AsSpan(offBlja, 4).SequenceEqual("BLJA"u8))
             throw new InvalidDataException($"Expected BLJA at 0x{offBlja:X}, got {Encoding.ASCII.GetString(raw, offBlja, 4)}");
 
-        int bljaDoff = (int)ReadU32(raw, offBlja + 4, be);
-        int bljaDsz  = (int)ReadU32(raw, offBlja + 8, be);
+        int bljaDoff = (int)ReadU32(raw, offBlja + 4);
+        int bljaDsz  = (int)ReadU32(raw, offBlja + 8);
         int bljaDataAbs = offBlja + bljaDoff;
 
         // INDX
         int indxAbs = bljaDataAbs;
-        if (!raw.AsSpan(indxAbs, 4).SequenceEqual(magicIndx))
+        if (!raw.AsSpan(indxAbs, 4).SequenceEqual("INDX"u8))
         {
-            int found = ScanMagic(raw, indxAbs, magicIndx, 32);
+            int found = ScanMagic(raw, indxAbs, "INDX"u8, 32);
             if (found < 0) throw new InvalidDataException($"INDX not found near 0x{indxAbs:X}");
             indxAbs = found;
         }
 
-        int indxDoff = (int)ReadU32(raw, indxAbs + 4, be);
-        int indxDsz  = (int)ReadU32(raw, indxAbs + 8, be);
+        int indxDoff = (int)ReadU32(raw, indxAbs + 4);
+        int indxDsz  = (int)ReadU32(raw, indxAbs + 8);
         int indxDataAbs = indxAbs + indxDoff;
 
         // TEXT — scan past FOOT
         int textSearchFrom = indxDataAbs + indxDsz;
-        int textAbs = ScanMagic(raw, textSearchFrom, magicText, 64);
+        int textAbs = ScanMagic(raw, textSearchFrom, "TEXT"u8, 64);
         if (textAbs < 0) throw new InvalidDataException($"TEXT not found after 0x{textSearchFrom:X}");
 
-        int textDoff = (int)ReadU32(raw, textAbs + 4, be);
-        int textDsz  = (int)ReadU32(raw, textAbs + 8, be);
+        int textDoff = (int)ReadU32(raw, textAbs + 4);
+        int textDsz  = (int)ReadU32(raw, textAbs + 8);
         int textDataAbs = textAbs + textDoff;
 
         // Build string list — format differs by file type
         var strings = new List<KeyValuePair<int, string>>();
 
-        if (fileType == EvtxFileType.EventText || be)
+        if (fileType == EvtxFileType.EventText)
         {
             // INDX: [u32 string_id][u32 byte_offset] × n, skip id==0
-            // Big-endian files always use this format regardless of filename.
             int n = indxDsz / 8;
             strings.Capacity = n;
             for (int i = 0; i < n; i++)
             {
-                int sid  = (int)ReadU32(raw, indxDataAbs + i * 8,     be);
-                int toff = (int)ReadU32(raw, indxDataAbs + i * 8 + 4, be);
+                int sid  = (int)ReadU32(raw, indxDataAbs + i * 8);
+                int toff = (int)ReadU32(raw, indxDataAbs + i * 8 + 4);
                 if (sid == 0) continue;
                 string s;
                 try { s = ReadCStr(raw, textDataAbs + toff); }
@@ -189,7 +165,7 @@ internal static class EvtxParser
                 strings.Add(new KeyValuePair<int, string>(sid, s));
             }
         }
-        else // SubPackage (LE only)
+        else // SubPackage
         {
             // INDX: [u16 unk][u16 shortCount][16 bytes unk][short offset table][optional 0xCDAB pad][long offset table]
             // offset_count (total) from CMNH data field 3 (maxIdx); offset × 2 = byte pos in TEXT; offset itself = key
@@ -224,7 +200,6 @@ internal static class EvtxParser
         return new ParsedEvtx
         {
             FileType       = fileType,
-            BigEndian      = be,
             EntryCount     = strings.Count,
             OrigEntryCount = entryCount,
             MinIndex       = minIdx,
@@ -263,14 +238,14 @@ internal static class EvtxParser
             cursor += encoded.Length;
         }
 
-        byte[] newIndx = BuildIndxBytes(indxEntries, parsed.BigEndian);
+        byte[] newIndx = BuildIndxBytes(indxEntries);
         byte[] newText = ConcatBytes(textParts);
         int n = indxEntries.Count;
 
         byte[] result = SpliceAndPatch(parsed, newIndx, newText);
 
         if (parsed.EntryCount == parsed.OrigEntryCount)
-            WriteU32(result, parsed.CmnhEcAbs, (uint)n, parsed.BigEndian);
+            WriteU32(result, parsed.CmnhEcAbs, (uint)n);
 
         return result;
     }
@@ -465,8 +440,6 @@ internal static class EvtxParser
 
     private static byte[] SpliceAndPatch(ParsedEvtx parsed, byte[] newIndxData, byte[] newTextData)
     {
-        bool be = parsed.BigEndian;
-
         int indxPad = (16 - newIndxData.Length % 16) % 16;
         if (indxPad > 0) Array.Resize(ref newIndxData, newIndxData.Length + indxPad);
 
@@ -485,26 +458,25 @@ internal static class EvtxParser
         raw = Splice(raw, tStart, tEnd, newTextData);
         int deltaText = newTextData.Length - (tEnd - tStart);
 
-        WriteU32(raw, parsed.IndxDszAbs, (uint)newIndxData.Length, be);
-        WriteU32(raw, textDszAbs, (uint)newTextData.Length, be);
+        WriteU32(raw, parsed.IndxDszAbs, (uint)newIndxData.Length);
+        WriteU32(raw, textDszAbs, (uint)newTextData.Length);
 
         // EVTX: size = file_size - 16 (after EVTX header)
-        // XTVE: size = file_size - 32 (after XTVE header + CMNH section header)
-        WriteU32(raw, 8, (uint)(raw.Length - (be ? 32 : 16)), be);
+        WriteU32(raw, 8, (uint)(raw.Length - 16));
 
-        uint oldBljaDsz = ReadU32(raw, parsed.BljaDszAbs, be);
-        WriteU32(raw, parsed.BljaDszAbs, (uint)(oldBljaDsz + deltaIndx + deltaText), be);
+        uint oldBljaDsz = ReadU32(raw, parsed.BljaDszAbs);
+        WriteU32(raw, parsed.BljaDszAbs, (uint)(oldBljaDsz + deltaIndx + deltaText));
 
         return raw;
     }
 
-    private static byte[] BuildIndxBytes(List<(int key, int offset)> entries, bool be)
+    private static byte[] BuildIndxBytes(List<(int key, int offset)> entries)
     {
         var buf = new byte[entries.Count * 8];
         for (int i = 0; i < entries.Count; i++)
         {
-            WriteU32(buf, i * 8,     (uint)entries[i].key,    be);
-            WriteU32(buf, i * 8 + 4, (uint)entries[i].offset, be);
+            WriteU32(buf, i * 8,     (uint)entries[i].key);
+            WriteU32(buf, i * 8 + 4, (uint)entries[i].offset);
         }
         return buf;
     }
