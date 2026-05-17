@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 
 namespace ETPLocalizer;
 
-// Port of dqx_blowfish.py (BouncyCastle-derived). Uses little-endian block I/O.
+// credit: https://github.com/Sziadan/kakia-dqx-proxy/tree/main/kakia-cryptography
 internal sealed class DqxBlowfish
 {
     private const int Rounds  = 16;
