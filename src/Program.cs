@@ -56,6 +56,8 @@ class Program
                 "rebuild"           => CmdRebuild(cmdArgs, verbose),
                 "hexdump"           => CmdHexdump(cmdArgs),
                 "port-translations" => CmdPortTranslations(cmdArgs, verbose),
+                "all-wii"           => Wii.WiiCommands.CmdAll(cmdArgs, verbose),
+                "rebuild-wii"       => Wii.WiiCommands.CmdRebuild(cmdArgs, verbose),
                 _          => Error($"Unknown command: {cmd}"),
             };
         }
@@ -565,7 +567,7 @@ class Program
 
             Usage: etp.exe [--data-dir <path>] [--archive <name>] [--db <dat_db.db>] [-v] <command> [args]
 
-            Commands:
+            Commands (PC):
               dump               <output_dir>                        Extract all ETPs from archive
               tojson             <input.etp> [output.json]           Parse ETP to JSON
               fromjson           <input.json> <ref.etp> [out.etp]    Rebuild ETP from JSON
@@ -576,11 +578,28 @@ class Program
                                                                      and port filled-in strings into
                                                                      <all_output_dir>/json/_lang/en/
 
-            all output layout:
+            Commands (Wii):
+              all-wii            <wii_input_dir> <output_dir>        Mirror wii input into <output_dir>/wii
+                                                                     and dump every ETP (standalone + inside
+                                                                     RPSs) to <output_dir>/json/ as a flat list
+              rebuild-wii        <input_dir> <output_dir>            Read translated JSONs in <input_dir>/json/
+                                                                     and originals in <input_dir>/wii/, write
+                                                                     patched files to <output_dir> mirroring
+                                                                     the original Wii tree
+
+            all output layout (PC):
               etp/                      ETPs from eventText directory
               rps/                      ETPs extracted from packresource RPS + raw RPS
               json/_lang/en/            Translation targets (jp key → empty)
               json/_lang/ja/            Source strings   (jp key → jp value)
+
+            all-wii output layout:
+              wii/<full mirror of input>             Untouched originals (rebuild reference)
+              json/<mirror of input tree>            Translation targets — each .wii.etp becomes a
+                                                     .wii.json at the same relative path. Each .wii.rps
+                                                     becomes a directory of per-section .wii.json files
+                                                     (the SEDBRES section path inside the RPS is preserved
+                                                     under the directory).
 
             rebuild output layout:
               common/data/eventText/ja/current/<name>.etp

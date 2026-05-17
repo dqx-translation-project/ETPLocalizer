@@ -28,8 +28,10 @@ etp.exe [--data-dir <path>] [--archive <name>] [--db <dat_db.db>] [-v] <command>
 | `dump` | `<output_dir>` | Extract all ETPs from the archive |
 | `tojson` | `<input.etp> [output.json]` | Parse a single ETP to JSON |
 | `fromjson` | `<input.json> <ref.etp> [out.etp]` | Rebuild an ETP from a JSON |
-| `all` | `<output_dir>` | Dump all ETPs + RPS to JSON (full workflow start) |
-| `rebuild` | `<input_dir> <output_dir>` | Rebuild patched ETPs from translated JSONs |
+| `all` | `<output_dir>` | Dump all PC ETPs + RPS to JSON (full workflow start) |
+| `rebuild` | `<input_dir> <output_dir>` | Rebuild patched PC ETPs from translated JSONs |
+| `all-wii` | `<wii_input_dir> <output_dir>` | Dump every Wii ETP (standalone + RPS-embedded) to a flat JSON folder |
+| `rebuild-wii` | `<input_dir> <output_dir>` | Rebuild patched Wii ETPs/RPSs from translated JSONs |
 | `hexdump` | `<input.etp> [-n <bytes>]` | Hex inspect an ETP file |
 | `port-translations` | `<all_output_dir> [--url <zip>]` | Pull translations from the dqx_translations repo |
 
@@ -55,16 +57,15 @@ Output from `rebuild` lands in `common/data/...` matching the internal game's di
 
 #### wii
 
+See [WII.md](WII.md) for the full Wii workflow. Quick version:
+
 ```sh
-# Dump each file to json (you could script this)
-etp.exe tojson <input.etp> .
-
-# Modify your json files here. You could use port-translations, but the wii game
-# doesn't receive updates anymore, so they won't change.
-
-# Rebuild patched game files
-etp.exe fromjson <input.json> <ref.etp> .
+etp.exe all-wii <wii_input_dir> <output_dir>
+# translate JSONs under <output_dir>/json/
+etp.exe rebuild-wii <output_dir> <patched_output_dir>
 ```
+
+The Wii commands work directly off a copy of the disc's `Data/` tree - no archive, no `dat_db.db`, no Blowfish keys. The Wii code lives under `src/Wii/` and is fully isolated from the PC parser.
 
 ### Options (PC)
 
