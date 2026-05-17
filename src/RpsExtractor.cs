@@ -69,7 +69,7 @@ internal static class RpsExtractor
     }
 
     // Rebuild the RPS replacing etp-type sections with new EVTX content.
-    // CRY sections are left unchanged (re-encryption not yet supported).
+    // CRY sections that have a translation are replaced with plain EVTX; untranslated CRY sections are left unchanged.
     public static byte[] RebuildRps(byte[] originalRps, IReadOnlyDictionary<string, byte[]> modifiedEtps)
     {
         var sedbres = new SedbresFile(originalRps);
@@ -78,10 +78,10 @@ internal static class RpsExtractor
         foreach (var sec in sedbres.ResourceSections)
         {
             if (sec.TypeTag != "etp") continue;
-            if (IsCry(sec.Data)) continue; // CRY sections can't be re-encrypted; leave unchanged
             string name = DeriveEtpName(sec);
             if (modifiedEtps.TryGetValue(name, out byte[]? newEvtx))
-                replacements[sec.Index] = newEvtx;
+                replacements[sec.Index] = newEvtx; // replace CRY sections with plain EVTX; game accepts both
+            // if no replacement, CRY sections stay unchanged (re-encryption not supported)
         }
 
         return sedbres.Rebuild(replacements);
