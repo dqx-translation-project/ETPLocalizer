@@ -31,10 +31,15 @@ internal static class EtpFinder
             using var conn = new SqliteConnection($"Data Source={dbPath};Mode=ReadOnly");
             conn.Open();
             using var cmd = conn.CreateCommand();
-            cmd.CommandText = "SELECT file_hash, blowfish_key FROM files WHERE blowfish_key IS NOT NULL AND blowfish_key != ''";
+            // file_hash IS NOT NULL guard is essential: a keyed row with a NULL file_hash
+            // would make reader.GetString(0) throw, and the catch below would silently
+            // abort the whole load — dropping every key that comes after it in row order.
+            cmd.CommandText = "SELECT file_hash, blowfish_key FROM files WHERE blowfish_key IS NOT NULL AND blowfish_key != '' AND file_hash IS NOT NULL";
             using var reader = cmd.ExecuteReader();
             while (reader.Read())
             {
+                // Defensive: never let one malformed row truncate the entire key map.
+                if (reader.IsDBNull(0) || reader.IsDBNull(1)) continue;
                 string hexHash = reader.GetString(0);
                 string keyStr  = reader.GetString(1);
                 byte[] keyBytes = Encoding.UTF8.GetBytes(keyStr);
