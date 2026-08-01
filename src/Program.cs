@@ -1,7 +1,6 @@
 using System.IO.Compression;
 using System.Net.Http;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -11,12 +10,6 @@ class Program
 {
     private const string DefaultDataDir = @"C:\Program Files (x86)\SquareEnix\DRAGON QUEST X\Game\Content\Data";
     private const string DefaultArchive = "data00000000.win32";
-
-    private static readonly JsonSerializerOptions JsonWriteOpts = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
 
     static int Main(string[] args)
     {
@@ -113,8 +106,7 @@ class Program
         var parsed = EvtxParser.Parse(raw);
         var jdata = EvtxToJson(parsed);
 
-        using var f = File.Create(outputPath);
-        JsonSerializer.Serialize(f, jdata, JsonWriteOpts);
+        JsonIo.WriteFile(outputPath, jdata);
         Console.WriteLine($"Written {jdata.Count} strings to {outputPath}");
         return 0;
     }
@@ -477,8 +469,7 @@ class Program
 
             if (ported > 0)
             {
-                using var f = File.Create(localPath);
-                JsonSerializer.Serialize(f, localObj, JsonWriteOpts);
+                JsonIo.WriteFile(localPath, localObj);
                 stringsPorted += ported;
                 filesUpdated++;
                 if (verbose) Console.WriteLine($"  OK  {localName}: {ported} strings");
@@ -498,10 +489,8 @@ class Program
 
     private static void WriteJson(string enDir, string jaDir, string jsonName, ParsedEvtx parsed)
     {
-        using (var f = File.Create(Path.Combine(enDir, jsonName)))
-            JsonSerializer.Serialize(f, EvtxToJson(parsed, japanese: false), JsonWriteOpts);
-        using (var f = File.Create(Path.Combine(jaDir, jsonName)))
-            JsonSerializer.Serialize(f, EvtxToJson(parsed, japanese: true), JsonWriteOpts);
+        JsonIo.WriteFile(Path.Combine(enDir, jsonName), EvtxToJson(parsed, japanese: false));
+        JsonIo.WriteFile(Path.Combine(jaDir, jsonName), EvtxToJson(parsed, japanese: true));
     }
 
     private static byte[] RebuildEtp(string refPath, Dictionary<int, string> newStrings)

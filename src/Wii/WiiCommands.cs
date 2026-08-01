@@ -1,16 +1,9 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace ETPLocalizer.Wii;
 
 internal static class WiiCommands
 {
-    private static readonly JsonSerializerOptions JsonWriteOpts = new()
-    {
-        WriteIndented = true,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-    };
-
     private enum Kind { Standalone, RpsSection }
 
     private sealed class EtpRecord
@@ -60,8 +53,7 @@ internal static class WiiCommands
                 var jdata = EvtxToJson(parsed);
                 string outPath = Path.Combine(outJsonDir, rec.JsonRelPath);
                 Directory.CreateDirectory(Path.GetDirectoryName(outPath)!);
-                using var f = File.Create(outPath);
-                JsonSerializer.Serialize(f, jdata, JsonWriteOpts);
+                JsonIo.WriteFile(outPath, jdata);
                 ok++;
                 if (verbose) Console.WriteLine($"  OK  {rec.JsonRelPath}  ({parsed.Strings.Count} strings)");
             }
